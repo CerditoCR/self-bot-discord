@@ -52,6 +52,31 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(json.loads((Path(result['folder'])/'ultimo_envio.json').read_text()),state)
         self.assertEqual(core.import_package(bat,self.root/'cache')['config']['language'],'Español')
 
+    def test_account_named_bat_and_collision(self):
+        desktop = self.root/'Desktop'; desktop.mkdir()
+        config = dict(self.config, account_username='cerdito.cr', account_id='123456789012345678')
+        first = Path(core.export_local_desktop(config,self.base,'Español',desktop))
+        second = Path(core.export_local_desktop(config,self.base,'English',desktop))
+        self.assertEqual(first.name,'cerdito.cr.bat')
+        self.assertEqual(second.name,'cerdito.cr (2).bat')
+        self.assertTrue(core.bat_package_directory(first).name.startswith('cerdito.cr Local '))
+        imported = core.import_package(first,self.root/'cache')['config']
+        self.assertEqual(imported['account_username'],'cerdito.cr')
+        self.assertEqual(imported['language'],'Español')
+
+    def test_account_file_names_are_safe(self):
+        self.assertEqual(core.package_name('CON'), '_CON')
+        self.assertEqual(core.package_name('nul.txt'), '_nul.txt')
+        self.assertEqual(core.package_name('..', '123456789012345678'),'123456789012345678')
+        self.assertEqual(core.package_name('José'), 'Jose')
+        for unsafe in ['../../evil', '%PATH% & calc!', 'user\nOTHER=1', 'a'*200]:
+            stem=core.package_name(unsafe)
+            self.assertLessEqual(len(stem),64)
+            self.assertNotIn('/',stem)
+            self.assertNotIn('%',stem)
+            self.assertNotIn('&',stem)
+            self.assertNotIn('\n',stem)
+
     def test_image_import_and_path_rejection(self):
         image = self.root/'image.png';Image.new('RGB',(20,10),'green').save(image)
         path = self.root/'image.zip';core.export_zip(path,dict(self.config,image=str(image)),self.base)

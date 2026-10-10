@@ -20,6 +20,8 @@ Abre `SELF-BOT-DISCORD.exe`. No necesitas instalar Python.
 
 **Editar un paquete:** pulsa **Cargar BAT o ZIP**, cambia los datos y pulsa **Actualizar archivo cargado**. Reinicia el BAT o vuelve a subir el ZIP a Discloud.
 
+Los paquetes nuevos usan el nombre de usuario de la cuenta confirmada: `usuario.zip` o `usuario.bat`.
+
 La espera entre rondas varía un ±15 % y empieza al terminar la ronda. Entre canales hay pausas de 12–20 segundos. Se utiliza el motor original de envío: borra el mensaje anterior antes de intentar el nuevo envío.
 
 No compartas tu token ni los paquetes generados. [Discord prohíbe automatizar cuentas personales](https://support.discord.com/hc/es/articles/115002192352-Cuentas-de-usuario-automatizadas-Self-Bots).

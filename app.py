@@ -13,7 +13,7 @@ import warnings
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageOps, ImageTk
 from i18n import translate
-from core import import_package, update_package, normalize_token, valid_token, export_local_desktop, export_zip, load_config, request, resolve_channel, save_config, validate
+from core import import_package, update_package, normalize_token, valid_token, export_local_desktop, export_zip, load_config, request, resolve_channel, save_config, validate, package_name
 
 BASE = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
 DATA = Path(os.environ.get('APPDATA', Path.home())) / 'SelfBot Simple' / 'config.json'
@@ -35,6 +35,7 @@ class App(tk.Tk):
         self.theme_display = tk.StringVar(value='Claro')
         self.status_source = 'Listo. Configura los datos para empezar.'
         self.account_source = 'Sin comprobar'
+        self.confirmed_account = None
         self.events = queue.Queue()
         self.image = tk.StringVar()
         self.image_valid = False
@@ -475,6 +476,7 @@ class App(tk.Tk):
         ttk.Button(dialog, text=self.tr('Cerrar'), command=dialog.destroy).pack(pady=8)
 
     def invalidate_channel_names(self, *_):
+        self.confirmed_account = None
         self.set_account_status('Sin comprobar · el token cambió')
         self.set_status('Token cambiado. Vuelve a comprobar la cuenta.')
         for row in self.channel_rows:
@@ -616,7 +618,15 @@ class App(tk.Tk):
             self.set_status('Error: formato del token inválido.', 'error')
             return
         self.worker(lambda: request(c['token'], c['account_type'], '/users/@me'),
-                    lambda data: '✓ Token confirmado · @' + data.get('username', 'usuario'), context='account')
+                    lambda data: self.remember_account(data, c['token']), context='account')
+
+    def remember_account(self, data, token):
+        if not data.get('username') or not str(data.get('id', '')).isdigit():
+            raise ValueError('No se pudo identificar la cuenta. Se detiene el proceso.')
+        if normalize_token(self.token.get()) != token:
+            raise ValueError('Token cambiado. Vuelve a comprobar la cuenta.')
+        self.confirmed_account = dict(username=str(data['username']), id=str(data['id']), token=token)
+        return '✓ Token confirmado · @' + data['username']
 
     def load_package(self):
         if self.busy:
@@ -671,6 +681,8 @@ class App(tk.Tk):
         self.export(local=True)
 
     def export(self, local=False):
+        if self.busy:
+            return
         try:
             if self.image.get() and not self.image_valid:
                 raise ValueError('La imagen no se pudo abrir. Selecciona una imagen válida antes de generar el ZIP.')
@@ -678,12 +690,23 @@ class App(tk.Tk):
         except Exception as exc:
             self.error(exc)
             return
+        language = self.language.get()
+        if not self.confirmed_account or self.confirmed_account['token'] != c['token']:
+            def identified(data):
+                self.remember_account(data, c['token'])
+                self.set_account_status('✓ Token confirmado · @' + data['username'], 'success')
+                self.export_named(c, local, language)
+                return 'Procesando…' if self.busy else self.account_source
+            self.worker(lambda: request(c['token'], 'personal', '/users/@me'), identified)
+            return
+        self.export_named(c, local, language)
+
+    def export_named(self, c, local, language):
+        c = dict(c, account_username=self.confirmed_account['username'], account_id=self.confirmed_account['id'])
         if local:
-            language = self.language.get()
             self.worker(lambda: export_local_desktop(c, BASE, language), lambda result: 'BAT creado en el Escritorio: ' + result + '. Ábrelo para iniciar y ver los logs.')
             return
-        language = self.language.get()
-        path = filedialog.asksaveasfilename(parent=self, title=self.tr('Guardar paquete para Discloud'), defaultextension='.zip', initialfile='selfbot-discloud.zip' if language == 'English' else 'mensajes-simple.zip', filetypes=[(self.tr('Paquete ZIP'), '*.zip')])
+        path = filedialog.asksaveasfilename(parent=self, title=self.tr('Guardar paquete para Discloud'), defaultextension='.zip', initialfile=package_name(c['account_username'], c['account_id']) + '.zip', filetypes=[(self.tr('Paquete ZIP'), '*.zip')])
         if path:
             self.worker(lambda: export_zip(path, c, BASE, language), lambda result: 'ZIP creado: ' + result)
 

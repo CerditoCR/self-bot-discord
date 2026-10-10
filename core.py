@@ -11,6 +11,7 @@ import tempfile
 import urllib.error
 import urllib.request
 import uuid
+import unicodedata
 import zipfile
 
 API = 'https://discord.com/api/v10'
@@ -293,12 +294,23 @@ def desktop_directory():
     return Path(buffer.value)
 
 
+def package_name(username, account_id=''):
+    name = unicodedata.normalize('NFKD', str(username or '')).encode('ascii', 'ignore').decode()
+    name = re.sub(r'[^a-zA-Z0-9_. -]', '_', name).strip(' .')[:64].rstrip(' .')
+    if not name:
+        name = str(account_id) if str(account_id).isdigit() else 'SELF BOT DISCORD'
+    if re.fullmatch(r'(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?', name, re.I):
+        name = '_' + name
+    return name
+
+
 def export_local_desktop(config, base, language='Español', desktop=None):
     desktop = Path(desktop) if desktop is not None else desktop_directory()
     if not desktop.is_dir():
         raise ValueError('No se pudo localizar el Escritorio de Windows.')
     # Cada exportación conserva los archivos y el estado de las anteriores.
-    folder_name = 'SELF BOT DISCORD Local ' + uuid.uuid4().hex[:10]
+    stem = package_name(config.get('account_username'), config.get('account_id', ''))
+    folder_name = stem + ' Local ' + uuid.uuid4().hex[:10]
     package = desktop / folder_name
     package.mkdir()
     completed = False
@@ -309,11 +321,11 @@ def export_local_desktop(config, base, language='Español', desktop=None):
             z.extractall(package)
         archive.unlink()
         start_name = 'start.bat' if language == 'English' else 'iniciar.bat'
-        launcher = '\r\n'.join(['@echo off', 'setlocal',
+        launcher = '\r\n'.join(['@echo off', 'setlocal', 'chcp 65001 >nul',
             'call "%~dp0' + folder_name + '\\' + start_name + '"', 'exit /b %errorlevel%', ''])
         # No reemplazar archivos del usuario ni lanzadores anteriores.
         for number in range(1, 10001):
-            name = 'SELF BOT DISCORD' + (f' ({number})' if number > 1 else '') + '.bat'
+            name = stem + (f' ({number})' if number > 1 else '') + '.bat'
             bat = desktop / name
             try:
                 with bat.open('x', encoding='utf-8', newline='') as f:
