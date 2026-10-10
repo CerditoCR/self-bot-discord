@@ -165,7 +165,7 @@ class App(tk.Tk):
         outer = self.section(shell, '04', 'Cuándo enviar')
         row = ttk.Frame(outer)
         row.pack(fill='x', pady=(5, 4))
-        ttk.Label(row, text='Una ronda cada').pack(side='left')
+        ttk.Label(row, text='Espera entre rondas (±15 %)').pack(side='left')
         self.interval = ttk.Entry(row, textvariable=self.minutes, width=8)
         self.interval.pack(side='left', padx=8)
         ttk.Label(row, text='minutos').pack(side='left')

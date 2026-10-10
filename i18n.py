@@ -2,6 +2,7 @@
 import re
 
 EN = {
+ 'Espera entre rondas (±15 %)': 'Wait between rounds (±15%)',
 'Cargar BAT o ZIP': 'Load BAT or ZIP',
 'Actualizar archivo cargado': 'Update loaded file',
 'Archivo cargado: {name}': 'Loaded file: {name}',

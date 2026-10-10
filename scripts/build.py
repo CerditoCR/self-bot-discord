@@ -16,7 +16,7 @@ def main():
     run('--console', '--name', 'local-runner', '--distpath', 'build/runtime', '--workpath', 'build/runner', '--specpath', 'build/spec', 'bot.py')
     shutil.copyfile(ROOT/'build/runtime/local-runner.exe', ROOT/'local-runner.exe')
     args = ['--windowed','--name','SELF BOT DISCORD','--distpath','dist','--workpath','build/gui','--specpath','build/spec']
-    for name in ('bot.py','core.py','i18n.py','local-runner.exe'):
+    for name in ('bot.py','core.py','i18n.py','legacy_engine.py','local-runner.exe'):
         args.extend(['--add-data', str(ROOT/name)+';.'])
     run(*args,'app.py')
     print('Build complete: dist/SELF BOT DISCORD.exe')

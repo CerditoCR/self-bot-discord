@@ -14,7 +14,7 @@ class ProjectTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         self.root = Path(temp.name); self.base = self.root/'base'; self.base.mkdir()
-        for name in ('bot.py','core.py','i18n.py'):
+        for name in ('bot.py','core.py','i18n.py','legacy_engine.py'):
             (self.base/name).write_bytes((ROOT/name).read_bytes())
         (self.base/'local-runner.exe').write_bytes(b'OFFLINE PLACEHOLDER - NEVER EXECUTE')
         self.config = dict(token='DUMMY_TEST_ONLY',account_type='personal',channels=['123456789012345678'],message='Original',minutes=30)

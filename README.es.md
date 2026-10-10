@@ -1,4 +1,4 @@
-# SELF BOT DISCORD — Versión 1
+# SELF BOT DISCORD — Versión 2
 
 [English](README.md)
 
@@ -19,5 +19,7 @@ Abre `SELF-BOT-DISCORD.exe`. No necesitas instalar Python.
 **Local:** abre el BAT del Escritorio. CMD muestra los logs. Pulsa **Ctrl+C** o cierra CMD para detenerlo. Conserva la carpeta generada junto al BAT. La primera ronda empieza inmediatamente.
 
 **Editar un paquete:** pulsa **Cargar BAT o ZIP**, cambia los datos y pulsa **Actualizar archivo cargado**. Reinicia el BAT o vuelve a subir el ZIP a Discloud.
+
+La espera entre rondas varía un ±15 % y empieza al terminar la ronda. Entre canales hay pausas de 12–20 segundos. Se utiliza el motor original de envío: borra el mensaje anterior antes de intentar el nuevo envío.
 
 No compartas tu token ni los paquetes generados. [Discord prohíbe automatizar cuentas personales](https://support.discord.com/hc/es/articles/115002192352-Cuentas-de-usuario-automatizadas-Self-Bots).

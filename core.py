@@ -106,38 +106,39 @@ def resolve_channel(token, account_type, channel_id):
 
 
 def request(token, account_type, path, message=None, image='', method=None):
+    """GUI account/channel queries use the original engine's HTTP client."""
+    import asyncio
+    import aiohttp
+    from legacy_engine import _headers, _gen_nonce
     token = normalize_token(token)
     if not valid_token(token):
         raise ValueError('Introduce un token válido, sin espacios ni comillas sueltas.')
     auth = f'Bot {token}' if account_type == 'bot' else token
-    headers = {'Authorization': auth, 'User-Agent': 'SelfBotSimple/1.0'}
-    body = None
-    if message is not None:
-        payload = {'content': message, 'allowed_mentions': {'parse': []}}
-        if image:
-            boundary = 'simple-' + uuid.uuid4().hex
-            payload['attachments'] = [{'id': 0, 'filename': 'imagen' + Path(image).suffix.lower()}]
-            parts = [f'--{boundary}\r\nContent-Disposition: form-data; name="payload_json"\r\nContent-Type: application/json\r\n\r\n'.encode(),
-                     json.dumps(payload).encode(), b'\r\n',
-                     f'--{boundary}\r\nContent-Disposition: form-data; name="files[0]"; filename="{payload["attachments"][0]["filename"]}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode(),
-                     Path(image).read_bytes(), f'\r\n--{boundary}--\r\n'.encode()]
-            body = b''.join(parts)
-            headers['Content-Type'] = 'multipart/form-data; boundary=' + boundary
-        else:
-            body = json.dumps(payload).encode()
-            headers['Content-Type'] = 'application/json'
-    req = urllib.request.Request(API + path, data=body, headers=headers, method=method)
+    async def query():
+        options = dict(headers=_headers(auth), timeout=aiohttp.ClientTimeout(total=30))
+        if message is not None:
+            payload = dict(content=message, nonce=_gen_nonce(), tts=False, flags=0)
+            if image:
+                form = aiohttp.FormData()
+                form.add_field('payload_json', json.dumps(payload), content_type='application/json')
+                form.add_field('files[0]', Path(image).read_bytes(), filename=Path(image).name,
+                               content_type='application/octet-stream')
+                options['data'] = form
+            else:
+                options['json'] = payload
+        async with aiohttp.ClientSession() as session:
+            async with session.request(method or ('POST' if message is not None else 'GET'), API + path, **options) as response:
+                raw = await response.read()
+                try:
+                    data = json.loads(raw) if raw else {}
+                except ValueError:
+                    data = {}
+                if response.status >= 400:
+                    raise APIError(response.status, data)
+                return data
     try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            raw = response.read()
-            return json.loads(raw) if raw else {}
-    except urllib.error.HTTPError as exc:
-        try:
-            data = json.loads(exc.read())
-        except (ValueError, OSError):
-            data = {}
-        raise APIError(exc.code, data) from None
-    except (urllib.error.URLError, TimeoutError, OSError):
+        return asyncio.run(query())
+    except (aiohttp.ClientError, TimeoutError, OSError):
         raise RuntimeError('No se pudo confirmar la respuesta de Discord. Revisa la conexión; el envío podría haberse completado.') from None
 
 
@@ -205,10 +206,10 @@ def export_zip(path, config, base, language='Español'):
         with tempfile.NamedTemporaryFile(dir=path.parent, suffix='.zip', delete=False) as f:
             temporary = f.name
         with zipfile.ZipFile(temporary, 'w', zipfile.ZIP_DEFLATED) as z:
-            for name in ('bot.py', 'core.py', 'i18n.py'):
+            for name in ('bot.py', 'core.py', 'i18n.py', 'legacy_engine.py'):
                 z.write(Path(base) / name, name)
             z.writestr('config.json', json.dumps(c, ensure_ascii=False, indent=2))
-            z.writestr('requirements.txt', '# Python standard library only\n' if english else '# Solo biblioteca estándar de Python\n')
+            z.writestr('requirements.txt', 'aiohttp\n')
             z.writestr('README.txt' if english else 'LEEME.txt', (
                 'SELF BOT DISCORD - Discloud\nUpload this ZIP to Discloud. The first round starts immediately.\nTo stop: use Stop in the Discloud dashboard.\nThis package contains your credential. Do not share it.\n' if english else
                 'SELF BOT DISCORD - Discloud\nSube este ZIP a Discloud. La primera ronda empieza inmediatamente.\nPara detener: usa Detener en el panel de Discloud.\nEste paquete contiene la credencial. No lo compartas.\n'))
