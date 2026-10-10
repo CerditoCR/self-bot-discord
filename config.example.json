@@ -1,0 +1,15 @@
+{
+  "token": "PASTE_ACCOUNT_TOKEN_HERE",
+  "account_type": "personal",
+  "channels": [
+    "123456789012345678"
+  ],
+  "message": "Example / Ejemplo",
+  "image": "",
+  "minutes": 30,
+  "language": "English",
+  "read_before": true,
+  "typing_before": true,
+  "variable_pauses": true,
+  "delete_previous": true
+}
