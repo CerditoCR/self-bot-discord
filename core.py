@@ -75,7 +75,39 @@ def validate(config, require_content=True):
     # Comportamiento fijo, incluido para configuraciones de versiones anteriores.
     for key in ('read_before', 'typing_before', 'variable_pauses', 'delete_previous'):
         c[key] = True
+    extras = c.get('extra_messages', [])
+    if not isinstance(extras, list) or any(not isinstance(item, dict) for item in extras):
+        raise ValueError('La lista de mensajes no es válida.')
+    used = set(channels)
+    validated = []
+    for index, item in enumerate(extras, 2):
+        try:
+            entry = validate(dict(item, token=c['token'], account_type=c['account_type'],
+                                  minutes=minutes, extra_messages=[]), require_content)
+            if used.intersection(entry['channels']):
+                raise ValueError('Un canal no puede pertenecer a dos mensajes distintos.')
+        except (ValueError, OSError) as exc:
+            raise ValueError(f'Mensaje {index}: {exc}') from None
+        used.update(entry['channels'])
+        validated.append({key: entry.get(key, [] if key == 'channel_metadata' else '')
+                          for key in ('channels', 'channel_metadata', 'message', 'image')})
+    if extras or 'extra_messages' in c:
+        c['extra_messages'] = validated
     return c
+
+
+def message_entries(config):
+    return [config, *config.get('extra_messages', [])]
+
+
+def package_images(config):
+    files = []
+    for index, entry in enumerate(message_entries(config), 1):
+        image = entry.get('image', '')
+        entry['image'] = (('imagen' if index == 1 else f'imagen_{index}') + Path(image).suffix.lower()) if image else ''
+        if image:
+            files.append((image, entry['image']))
+    return files
 
 
 def resolve_channel(token, account_type, channel_id):
@@ -199,8 +231,7 @@ def export_zip(path, config, base, language='Español'):
     c['language'] = 'English' if language == 'English' else 'Español'
     c['runtime_target'] = 'discloud'
     english = c['language'] == 'English'
-    image = c.get('image', '')
-    c['image'] = 'imagen' + Path(image).suffix.lower() if image else ''
+    images = package_images(c)
     path = Path(path)
     temporary = None
     try:
@@ -212,11 +243,11 @@ def export_zip(path, config, base, language='Español'):
             z.writestr('config.json', json.dumps(c, ensure_ascii=False, indent=2))
             z.writestr('requirements.txt', 'aiohttp\n')
             z.writestr('README.txt' if english else 'LEEME.txt', (
-                'SELF BOT DISCORD - Discloud\nUpload this ZIP to Discloud. The first round starts immediately.\nTo stop: use Stop in the Discloud dashboard.\nThis package contains your credential. Do not share it.\n' if english else
-                'SELF BOT DISCORD - Discloud\nSube este ZIP a Discloud. La primera ronda empieza inmediatamente.\nPara detener: usa Detener en el panel de Discloud.\nEste paquete contiene la credencial. No lo compartas.\n'))
-            z.writestr('discloud.config', 'NAME=SELF BOT DISCORD\nTYPE=bot\nMAIN=bot.py\nRAM=100\nVERSION=latest\n')
-            if image:
-                z.write(image, c['image'])
+                'BOT MENSAJE - Discloud\nUpload this ZIP to Discloud. The first round starts immediately.\nTo stop: use Stop in the Discloud dashboard.\nThis package contains your credential. Do not share it.\n' if english else
+                'BOT MENSAJE - Discloud\nSube este ZIP a Discloud. La primera ronda empieza inmediatamente.\nPara detener: usa Detener en el panel de Discloud.\nEste paquete contiene la credencial. No lo compartas.\n'))
+            z.writestr('discloud.config', 'NAME=BOT MENSAJE\nTYPE=bot\nMAIN=bot.py\nRAM=100\nVERSION=latest\n')
+            for image, name in images:
+                z.write(image, name)
         os.replace(temporary, path)
     finally:
         if temporary and os.path.exists(temporary):
@@ -228,8 +259,7 @@ def export_local_zip(path, config, base, language='Español'):
     c = validate(config)
     c['language'] = 'English' if language == 'English' else 'Español'
     c['runtime_target'] = 'local'
-    image = c.get('image', '')
-    c['image'] = 'imagen' + Path(image).suffix.lower() if image else ''
+    images = package_images(c)
     runner = Path(base) / 'local-runner.exe'
     if not runner.is_file():
         raise ValueError('No se encuentra el ejecutable local. Vuelve a descargar la versión completa del panel.')
@@ -237,13 +267,13 @@ def export_local_zip(path, config, base, language='Español'):
     instruction = 'TO STOP: press Ctrl+C or close this window.' if english else 'PARA DETENER: pulsa Ctrl+C o cierra esta ventana.'
     stopped = 'Process stopped. Review the logs above.' if english else 'Proceso detenido. Revisa los logs de arriba.'
     launcher = '\r\n'.join([
-        '@echo off', 'setlocal', 'chcp 65001 >nul', 'title SELF BOT DISCORD - Logs',
+        '@echo off', 'setlocal', 'chcp 65001 >nul', 'title BOT MENSAJE - Logs',
         'pushd "%~dp0"', 'if errorlevel 1 exit /b 1',
-        'echo SELF BOT DISCORD - LOCAL', 'echo ' + instruction, 'echo.',
+        'echo BOT MENSAJE - LOCAL', 'echo ' + instruction, 'echo.',
         '"%~dp0local-runner.exe" --language=' + ('English' if english else 'Spanish'), 'set "run_exit=%errorlevel%"', 'echo.',
         'echo ' + stopped, 'echo ' + ('Press any key to close this window.' if english else 'Pulsa cualquier tecla para cerrar esta ventana.'), 'pause >nul', 'popd', 'exit /b %run_exit%', ''])
     instructions = (
-        'SELF BOT DISCORD - Local Windows package\n\n'
+        'BOT MENSAJE - Local Windows package\n\n'
         '1. Extract the entire ZIP into a folder. Do not run it from inside the ZIP.\n'
         '2. Double-click start.bat. Python installation is not required.\n'
         '3. CMD shows live logs with timestamps. The first round starts immediately.\n'
@@ -254,7 +284,7 @@ def export_local_zip(path, config, base, language='Español'):
         'Do not run multiple copies or both Discloud and the local package simultaneously.\n'
         'Logs appear in CMD; they are not saved to a log file.\n'
         if english else
-        'SELF BOT DISCORD - Paquete local para Windows\n\n'
+        'BOT MENSAJE - Paquete local para Windows\n\n'
         '1. Extrae TODO el ZIP en una carpeta. No lo ejecutes dentro del ZIP.\n'
         '2. Abre iniciar.bat con doble clic. No requiere instalar Python.\n'
         '3. CMD muestra los logs en vivo con fecha y hora. La primera ronda empieza inmediatamente.\n'
@@ -274,8 +304,8 @@ def export_local_zip(path, config, base, language='Español'):
             z.writestr('config.json', json.dumps(c, ensure_ascii=False, indent=2))
             z.writestr('start.bat' if english else 'iniciar.bat', launcher.encode('utf-8'))
             z.writestr('README.txt' if english else 'LEEME.txt', instructions.encode('utf-8'))
-            if image:
-                z.write(image, c['image'])
+            for image, name in images:
+                z.write(image, name)
         os.replace(temporary, path)
     finally:
         if temporary and os.path.exists(temporary):
@@ -298,7 +328,7 @@ def package_name(username, account_id=''):
     name = unicodedata.normalize('NFKD', str(username or '')).encode('ascii', 'ignore').decode()
     name = re.sub(r'[^a-zA-Z0-9_. -]', '_', name).strip(' .')[:64].rstrip(' .')
     if not name:
-        name = str(account_id) if str(account_id).isdigit() else 'SELF BOT DISCORD'
+        name = str(account_id) if str(account_id).isdigit() else 'BOT MENSAJE'
     if re.fullmatch(r'(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\..*)?', name, re.I):
         name = '_' + name
     return name
@@ -360,7 +390,19 @@ def _read_package_config(raw):
         original_image = c.get('image', '')
         if not isinstance(original_image, str):
             raise ValueError()
-        clean = validate(dict(c, image=''), require_content=False)
+        extras = c.get('extra_messages', [])
+        if not isinstance(extras, list) or any(not isinstance(item, dict) for item in extras):
+            raise ValueError()
+        images = [item.get('image', '') for item in extras]
+        if any(not isinstance(image, str) for image in images):
+            raise ValueError()
+        clean = validate(dict(c, image='', extra_messages=[dict(item, image='') for item in extras]), require_content=False)
+        for entry, original, image in zip(clean.get('extra_messages', []), extras, images):
+            entry['image'] = image
+            rows = original.get('channel_metadata', [])
+            rows = rows if isinstance(rows, list) else []
+            metadata = {row['id']: {key: str(row.get(key, ''))[:300] for key in ('id', 'name', 'group', 'guild_id')} for row in rows if isinstance(row, dict) and row.get('id') in entry['channels']}
+            entry['channel_metadata'] = [metadata.get(channel, dict(id=channel, name='Sin comprobar', group='—', guild_id='')) for channel in entry['channels']]
         clean['image'] = original_image
         # Only keep fields the panel understands.
         rows = c.get('channel_metadata', [])
@@ -416,12 +458,11 @@ def bat_package_directory(path):
 def import_package(path, cache):
     """Lee sólo JSON e imagen; nunca ejecuta ni extrae código del paquete."""
     path = Path(path).resolve()
-    image_bytes = None
+    image_data = []
     if path.suffix.lower() == '.zip':
         try:
             with zipfile.ZipFile(path) as z:
-                entries = z.infolist()
-                names = [entry.filename for entry in entries]
+                names = z.namelist()
                 if len(names) > 1000 or names.count('config.json') != 1:
                     raise ValueError('El ZIP no contiene una configuración compatible.')
                 kind = 'cloud' if 'discloud.config' in names and 'bot.py' in names else 'local'
@@ -431,15 +472,16 @@ def import_package(path, cache):
                 if info.file_size > MAX_CONFIG:
                     raise ValueError('El ZIP no contiene una configuración compatible.')
                 c = _read_package_config(z.read(info))
-                if c['image']:
-                    relative = _relative_package_path(c['image'])
-                    image_name = str(relative)
-                    if names.count(image_name) != 1:
+                for entry in message_entries(c):
+                    if not entry.get('image'):
+                        continue
+                    name = str(_relative_package_path(entry['image']))
+                    if names.count(name) != 1:
                         raise ValueError('No se encuentra la imagen dentro del paquete.')
-                    info = z.getinfo(image_name)
+                    info = z.getinfo(name)
                     if info.file_size > MAX_IMAGE:
                         raise ValueError('Esta versión admite imágenes de hasta 10 MB.')
-                    image_bytes = z.read(info)
+                    image_data.append((entry, z.read(info)))
             source = dict(path=str(path), kind=kind)
         except (zipfile.BadZipFile, RuntimeError, KeyError):
             raise ValueError('No se pudo leer el ZIP. Selecciona un paquete válido de este programa.') from None
@@ -450,34 +492,37 @@ def import_package(path, cache):
             if config_path.stat().st_size > MAX_CONFIG:
                 raise ValueError('El archivo no contiene una configuración compatible de este programa.')
             c = _read_package_config(config_path.read_bytes())
-            if c['image']:
-                relative = _relative_package_path(c['image'])
+            for entry in message_entries(c):
+                if not entry.get('image'):
+                    continue
+                relative = _relative_package_path(entry['image'])
                 image_path = (folder / str(relative)).resolve()
                 if not image_path.is_relative_to(folder):
                     raise ValueError('El paquete contiene una ruta de archivo no válida.')
                 if image_path.stat().st_size > MAX_IMAGE:
                     raise ValueError('Esta versión admite imágenes de hasta 10 MB.')
-                image_bytes = image_path.read_bytes()
+                image_data.append((entry, image_path.read_bytes()))
             source = dict(path=str(path), kind='bat', folder=str(folder))
         except UnicodeError:
             raise ValueError('Este BAT no tiene una configuración compatible. Selecciona un BAT generado por este programa.') from None
     else:
         raise ValueError('Selecciona un archivo BAT o ZIP generado por este programa.')
-    image_path = None
+    created = []
     try:
-        if image_bytes is not None:
-            suffix = Path(c['image']).suffix.lower()
+        for entry, raw in image_data:
+            suffix = Path(entry['image']).suffix.lower()
             if suffix not in ('.png', '.jpg', '.jpeg', '.gif', '.webp'):
                 raise ValueError('Elige una imagen PNG, JPG, GIF o WEBP.')
             folder = Path(cache) / uuid.uuid4().hex
             folder.mkdir(parents=True)
             image_path = folder / ('imagen' + suffix)
-            image_path.write_bytes(image_bytes)
-            c['image'] = str(image_path.resolve())
+            created.append(image_path)
+            image_path.write_bytes(raw)
+            entry['image'] = str(image_path.resolve())
         c = validate(c)
         return dict(config=c, source=source)
     except Exception:
-        if image_path is not None:
+        for image_path in created:
             image_path.unlink(missing_ok=True)
             image_path.parent.rmdir()
         raise
@@ -499,6 +544,16 @@ def update_package(source, config, base, language='Español'):
                 state = json.loads(old_state.read_text(encoding='utf-8'))
                 if isinstance(state, dict) and isinstance(state.get('channels'), dict) and str(state.get('account_id', '')).isdigit():
                     (folder / 'ultimo_envio.json').write_text(json.dumps(state), encoding='utf-8')
+            for name in ('ultimo_msg.json', 'estado_entregas.json'):
+                previous = Path(source['folder']) / name
+                if previous.is_file():
+                    if previous.stat().st_size > MAX_CONFIG:
+                        raise ValueError('El estado de entrega es demasiado grande. Revisa el paquete antes de actualizarlo.')
+                    raw = previous.read_bytes()
+                    state = json.loads(raw.decode('utf-8'))
+                    if not isinstance(state, dict):
+                        raise ValueError('No se pudo conservar el estado de entrega. Revisa el paquete antes de actualizarlo.')
+                    (folder / name).write_bytes(raw)
             os.replace(launcher, path)
         except Exception:
             launcher.unlink(missing_ok=True)

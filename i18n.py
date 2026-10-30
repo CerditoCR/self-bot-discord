@@ -141,6 +141,20 @@ EN = {
 'Servidor {id} (nombre no accesible)': 'Server {id} (name unavailable)',
 }
 
+EN.update({
+    'Tus mensajes': 'Your messages',
+    'Cada mensaje tiene sus propios canales, texto e imagen.': 'Each message has its own channels, text and image.',
+    'Agregar otro mensaje': 'Add another message',
+    'Quitar mensaje': 'Remove message',
+    'Mensaje {number}': 'Message {number}',
+    'Mensaje {number}: {detail}': 'Message {number}: {detail}',
+    '¿Quitar el mensaje {number} con sus canales, texto e imagen?': 'Remove message {number} with its channels, text and image?',
+    'El intervalo se aplica a todos los mensajes.': 'The interval applies to all messages.',
+    'La lista de mensajes no es válida.': 'The message list is invalid.',
+    'Un canal no puede pertenecer a dos mensajes distintos.': 'A channel cannot belong to two different messages.',
+    'la imagen no se pudo abrir. Selecciona otra imagen.': 'Could not open the image. Select another image.',
+})
+
 # Match whole templates so user messages, paths and channel names stay untouched.
 TEMPLATES = []
 for source, target in EN.items():

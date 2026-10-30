@@ -41,14 +41,19 @@ class ProjectTests(unittest.TestCase):
 
     def test_bat_update_preserves_state_and_existing_files(self):
         desktop = self.root/'Desktop with spaces';desktop.mkdir()
-        existing = desktop/'SELF BOT DISCORD.bat';existing.write_text('user file')
+        existing = desktop/'BOT MENSAJE.bat';existing.write_text('user file')
         bat = Path(core.export_local_desktop(self.config,self.base,'English',desktop))
         self.assertEqual(existing.read_text(),'user file')
         loaded = core.import_package(bat,self.root/'cache'); old = Path(loaded['source']['folder'])
         state = dict(account_id='555',channels={'123456789012345678':'777'})
         (old/'ultimo_envio.json').write_text(json.dumps(state))
+        delivery = dict(pending={}, paused={}, cleanup={'123456789012345678':'777'})
+        (old/'estado_entregas.json').write_text(json.dumps(delivery))
+        (old/'ultimo_msg.json').write_text(json.dumps({'123456789012345678':'888'}))
         result = core.update_package(loaded['source'],self.config,self.base,'Español')
         self.assertTrue(old.is_dir());self.assertTrue(bat.is_file())
+        self.assertEqual(json.loads((Path(result['folder'])/'estado_entregas.json').read_text()),delivery)
+        self.assertEqual(json.loads((Path(result['folder'])/'ultimo_msg.json').read_text()),{'123456789012345678':'888'})
         self.assertEqual(json.loads((Path(result['folder'])/'ultimo_envio.json').read_text()),state)
         self.assertEqual(core.import_package(bat,self.root/'cache')['config']['language'],'Español')
 

@@ -16,14 +16,14 @@ from i18n import translate
 from core import import_package, update_package, normalize_token, valid_token, export_local_desktop, export_zip, load_config, request, resolve_channel, save_config, validate, package_name
 
 BASE = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
-DATA = Path(os.environ.get('APPDATA', Path.home())) / 'SelfBot Simple' / 'config.json'
+DATA = Path(os.environ.get('APPDATA', Path.home())) / 'Bot Mensaje' / 'config.json'
 PREFS = DATA.with_name('appearance.json')
 
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title('SELF BOT DISCORD')
+        self.title('BOT MENSAJE')
         screen_width, screen_height = self.winfo_screenwidth(), self.winfo_screenheight()
         width, height = min(820, screen_width - 80), min(860, screen_height - 100)
         self.geometry(f'{width}x{height}')
@@ -31,6 +31,9 @@ class App(tk.Tk):
         self.resizable(False, False)
         self.configure(bg='#f2f5fa')
         self.busy = False
+        self.posts = [{}]
+        self.active_post = 0
+        self.switching_post = False
         self.language = tk.StringVar(value='Español')
         self.theme_display = tk.StringVar(value='Claro')
         self.status_source = 'Listo. Configura los datos para empezar.'
@@ -87,7 +90,7 @@ class App(tk.Tk):
         self.bind('<MouseWheel>', lambda event: canvas.yview_scroll(-int(event.delta / 120), 'units') if canvas.bbox('all')[3] > canvas.winfo_height() else None)
         header = ttk.Frame(outer, style='Outer.TFrame')
         header.pack(fill='x')
-        ttk.Label(header, text='SELF BOT DISCORD', style='Title.TLabel').pack(side='left')
+        ttk.Label(header, text='BOT MENSAJE', style='Title.TLabel').pack(side='left')
         theme_row = ttk.Frame(outer, style='Outer.TFrame')
         theme_row.pack(fill='x', pady=(8, 0))
         ttk.Label(theme_row, text='TEMA', style='HeaderHint.TLabel').pack(side='left', padx=6)
@@ -117,7 +120,20 @@ class App(tk.Tk):
         self.account_label = ttk.Label(outer, textvariable=self.account_status, style='AccountInfo.TLabel', padding=(10, 8), wraplength=630)
         self.account_label.pack(fill='x', pady=(10, 0))
 
-        outer = self.section(shell, '02', 'Canales de destino')
+        manager = self.section(shell, '02', 'Tus mensajes')
+        ttk.Label(manager, text='Cada mensaje tiene sus propios canales, texto e imagen.', style='Hint.TLabel').pack(anchor='w')
+        manager_row = ttk.Frame(manager)
+        manager_row.pack(fill='x', pady=(8, 0))
+        self.post_selector = ttk.Combobox(manager_row, state='readonly', values=['Mensaje 1'], width=18)
+        self.post_selector.current(0)
+        self.post_selector.pack(side='left')
+        self.post_selector.bind('<<ComboboxSelected>>', self.select_post)
+        self.add_post_button = ttk.Button(manager_row, text='Agregar otro mensaje', command=self.add_post)
+        self.add_post_button.pack(side='left', padx=8)
+        self.remove_post_button = ttk.Button(manager_row, text='Quitar mensaje', command=self.remove_post)
+        self.remove_post_button.pack(side='right')
+
+        outer = self.section(shell, '03', 'Canales de destino')
         ttk.Label(outer, text='Pega un ID y pulsa Agregar para identificar el canal y su servidor.', style='Hint.TLabel', wraplength=650).pack(anchor='w', pady=(3, 5))
         channel_row = ttk.Frame(outer)
         channel_row.pack(fill='x', pady=(0, 6))
@@ -141,7 +157,7 @@ class App(tk.Tk):
         self.delete_channel_button = ttk.Button(channel_actions, text='Quitar seleccionado', command=self.remove_channel)
         self.delete_channel_button.pack(side='left')
 
-        outer = self.section(shell, '03', 'Tu mensaje')
+        outer = self.section(shell, '04', 'Tu mensaje')
         self.message = self.textbox(outer, height=4)
         self.message.bind('<<Modified>>', self.update_count)
         ttk.Label(outer, textvariable=self.counter, style='Hint.TLabel').pack(anchor='e', pady=(3, 5))
@@ -163,13 +179,14 @@ class App(tk.Tk):
         self.preview_caption.pack(anchor='w', pady=(4, 0))
         self.image.trace_add('write', self.update_image_preview)
 
-        outer = self.section(shell, '04', 'Cuándo enviar')
+        outer = self.section(shell, '05', 'Cuándo enviar')
         row = ttk.Frame(outer)
         row.pack(fill='x', pady=(5, 4))
         ttk.Label(row, text='Espera entre rondas (±15 %)').pack(side='left')
         self.interval = ttk.Entry(row, textvariable=self.minutes, width=8)
         self.interval.pack(side='left', padx=8)
         ttk.Label(row, text='minutos').pack(side='left')
+        ttk.Label(outer, text='El intervalo se aplica a todos los mensajes.', style='Hint.TLabel').pack(anchor='w')
         ttk.Label(outer, text='Al iniciar el bot en Discloud, la primera ronda comienza de inmediato.', style='Hint.TLabel', wraplength=650).pack(anchor='w')
 
         outer = self.footer
@@ -196,7 +213,7 @@ class App(tk.Tk):
         self.controls = [self.secret, self.reveal, self.channel_entry,
                          self.add_channel_button, self.delete_channel_button, self.message,
                          self.interval, self.check_button, self.choose_button, self.remove_button,
-                         self.zip_button, self.local_button, self.load_button, self.update_button]
+                         self.zip_button, self.local_button, self.load_button, self.update_button, self.add_post_button, self.remove_post_button, self.post_selector]
         self.restore()
         self.token.trace_add('write', self.invalidate_channel_names)
         self.static_texts = []
@@ -319,6 +336,8 @@ class App(tk.Tk):
         return translate(text, self.language.get())
 
     def apply_language(self):
+        self.post_selector.configure(values=[self.tr(f'Mensaje {i + 1}') for i in range(len(self.posts))])
+        self.post_selector.current(self.active_post)
         for widget, source in self.static_texts:
             widget.configure(text=self.tr(source))
         self.theme_selector.configure(values=[self.tr('Claro'), self.tr('Oscuro')])
@@ -377,11 +396,62 @@ class App(tk.Tk):
             self.message.edit_modified(False)
             self.refresh_form()
 
+    def editor_post(self):
+        return dict(channels=[row['id'] for row in self.channel_rows],
+                    channel_metadata=[dict(row) for row in self.channel_rows],
+                    message=self.message.get('1.0', 'end-1c'), image=self.image.get())
+
     def snapshot(self):
-        return dict(token=normalize_token(self.token.get()), account_type='personal',
-                    channels=[row['id'] for row in self.channel_rows], channel_metadata=[dict(row) for row in self.channel_rows], message=self.message.get('1.0', 'end-1c'),
-                    image=self.image.get(), minutes=self.minutes.get(),
+        posts = [dict(post) for post in self.posts]
+        posts[self.active_post] = self.editor_post()
+        return dict(posts[0], token=normalize_token(self.token.get()), account_type='personal',
+                    minutes=self.minutes.get(), extra_messages=posts[1:],
                     read_before=True, typing_before=True, variable_pauses=True, delete_previous=True)
+
+    def load_editor(self, index):
+        self.switching_post = True
+        try:
+            self.active_post = index
+            post = self.posts[index]
+            metadata = {str(row['id']): row for row in post.get('channel_metadata', []) if isinstance(row, dict) and 'id' in row}
+            self.channel_rows = [dict(metadata.get(channel, dict(id=channel, name='Sin comprobar', group='—', guild_id=''))) for channel in dict.fromkeys(post.get('channels', []))]
+            self.render_channels()
+            self.channel_id.set('')
+            self.message.delete('1.0', 'end')
+            self.message.insert('1.0', post.get('message', ''))
+            self.image.set(post.get('image', ''))
+            self.post_selector.configure(values=[self.tr(f'Mensaje {i + 1}') for i in range(len(self.posts))])
+            self.post_selector.current(index)
+        finally:
+            self.switching_post = False
+        self.update_image_preview()
+        self.update_count()
+        self.refresh_form()
+
+    def select_post(self, event=None):
+        if self.busy:
+            self.post_selector.current(self.active_post)
+            return
+        index = self.post_selector.current()
+        self.posts[self.active_post] = self.editor_post()
+        self.load_editor(index)
+
+    def add_post(self):
+        if self.busy:
+            return
+        self.posts[self.active_post] = self.editor_post()
+        self.posts.append(dict(channels=[], channel_metadata=[], message='', image=''))
+        self.load_editor(len(self.posts) - 1)
+        self.canvas.yview_moveto(0.25)
+
+    def remove_post(self):
+        if self.busy or len(self.posts) == 1:
+            return
+        index = self.active_post
+        if not messagebox.askyesno(self.tr('Quitar mensaje'), self.tr(f'¿Quitar el mensaje {index + 1} con sus canales, texto e imagen?'), parent=self):
+            return
+        self.posts.pop(index)
+        self.load_editor(min(index, len(self.posts) - 1))
 
     def restore(self):
         if not DATA.exists():
@@ -390,12 +460,8 @@ class App(tk.Tk):
         try:
             c = load_config(DATA)
             self.token.set(c.get('token', ''))
-            metadata = {str(row['id']): row for row in c.get('channel_metadata', []) if isinstance(row, dict) and 'id' in row}
-            for channel in dict.fromkeys(c.get('channels', [])):
-                self.channel_rows.append(dict(metadata.get(channel, {'id': channel, 'name': 'Sin comprobar', 'group': '—', 'guild_id': ''})))
-            self.render_channels()
-            self.message.insert('1.0', c.get('message', ''))
-            self.image.set(c.get('image', ''))
+            self.posts = [dict(c), *[dict(post) for post in c.get('extra_messages', [])]]
+            self.load_editor(0)
             self.minutes.set(str(c.get('minutes', 30)))
             self.set_status('Configuración recuperada. La cuenta aún no se ha comprobado.')
         except Exception:
@@ -411,7 +477,7 @@ class App(tk.Tk):
             self.channel_table.selection_set(selected[0])
 
     def refresh_form(self):
-        if not hasattr(self, 'message_preview'):
+        if self.switching_post or not hasattr(self, 'message_preview'):
             return
         text = self.message.get('1.0', 'end-1c')
         self.message_preview.configure(text=text or self.tr('Solo imagen' if self.image.get() else 'Tu mensaje aparecerá aquí.'))
@@ -434,6 +500,9 @@ class App(tk.Tk):
         dirty = hasattr(self, 'initial') and c != self.initial
         self.pending.set(self.tr('● Cambios sin guardar' if dirty else 'Sin cambios pendientes'))
         if hasattr(self, 'update_button'):
+            if not self.busy:
+                self.post_selector.configure(state='readonly')
+                self.remove_post_button.configure(state='normal' if len(self.posts) > 1 else 'disabled')
             self.update_button.configure(state='normal' if self.loaded_source and not self.busy else 'disabled')
             self.loaded_name.set(self.tr('Archivo cargado: {name}'.format(name=Path(self.loaded_source['path']).name)) if self.loaded_source else self.tr('Ningún archivo cargado'))
 
@@ -479,6 +548,9 @@ class App(tk.Tk):
         self.confirmed_account = None
         self.set_account_status('Sin comprobar · el token cambió')
         self.set_status('Token cambiado. Vuelve a comprobar la cuenta.')
+        for post in self.posts:
+            for row in post.get('channel_metadata', []):
+                row.update(name='Sin comprobar', group='—', guild_id='')
         for row in self.channel_rows:
             row.update(name='Sin comprobar', group='—', guild_id='')
         self.render_channels()
@@ -537,6 +609,8 @@ class App(tk.Tk):
             self.image.set(path)
 
     def update_image_preview(self, *_):
+        if self.switching_post:
+            return
         path = self.image.get()
         self.image_valid = False
         self.preview_photo = None
@@ -637,20 +711,18 @@ class App(tk.Tk):
 
     def apply_package(self, result):
         c = result['config']
-        if c.get('image'):
-            try:
-                with warnings.catch_warnings():
-                    warnings.simplefilter('error', Image.DecompressionBombWarning)
-                    with Image.open(c['image']) as picture:
-                        picture.verify()
-            except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
-                raise ValueError('La imagen del paquete está dañada. Selecciona otro paquete.') from None
+        for entry in [c, *c.get('extra_messages', [])]:
+            if entry.get('image'):
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('error', Image.DecompressionBombWarning)
+                        with Image.open(entry['image']) as picture:
+                            picture.verify()
+                except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+                    raise ValueError('La imagen del paquete está dañada. Selecciona otro paquete.') from None
         self.token.set(c['token'])
-        self.channel_rows = [dict(row) for row in c['channel_metadata']]
-        self.render_channels()
-        self.message.delete('1.0', 'end')
-        self.message.insert('1.0', c.get('message', ''))
-        self.image.set(c.get('image', ''))
+        self.posts = [dict(c), *[dict(post) for post in c.get('extra_messages', [])]]
+        self.load_editor(0)
         self.minutes.set(str(c['minutes']))
         self.loaded_source = result['source']
         self.set_account_status('Sin comprobar')
@@ -659,13 +731,26 @@ class App(tk.Tk):
         self.refresh_form()
         return 'Paquete cargado. Edita los datos y pulsa Actualizar archivo cargado.'
 
+    def validated_snapshot(self):
+        c = validate(self.snapshot())
+        for index, entry in enumerate([c, *c.get('extra_messages', [])], 1):
+            if entry.get('image'):
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('error', Image.DecompressionBombWarning)
+                        with Image.open(entry['image']) as picture:
+                            picture.verify()
+                except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+                    raise ValueError(f'Mensaje {index}: la imagen no se pudo abrir. Selecciona otra imagen.') from None
+        return c
+
     def update_loaded(self):
         if self.busy or not self.loaded_source:
             return
         try:
             if self.image.get() and not self.image_valid:
                 raise ValueError('La imagen no se pudo abrir. Selecciona una imagen válida antes de generar el ZIP.')
-            c = validate(self.snapshot())
+            c = self.validated_snapshot()
         except Exception as exc:
             self.error(exc)
             return
@@ -686,7 +771,7 @@ class App(tk.Tk):
         try:
             if self.image.get() and not self.image_valid:
                 raise ValueError('La imagen no se pudo abrir. Selecciona una imagen válida antes de generar el ZIP.')
-            c = validate(self.snapshot())
+            c = self.validated_snapshot()
         except Exception as exc:
             self.error(exc)
             return

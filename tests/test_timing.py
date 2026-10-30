@@ -6,6 +6,12 @@ import bot
 import legacy_engine as engine
 
 class EngineTests(unittest.TestCase):
+    def setUp(self):
+        for name, value in [('_delivery_path', None), ('_delivery_state', dict(pending={}, paused={}, cleanup={}, global_until=0, stopped=False)), ('_delivery_signatures', {}), ('_account_id', '')]:
+            item = patch.object(engine, name, value)
+            item.start()
+            self.addCleanup(item.stop)
+
     def test_adapter(self):
         c=dict(token='"DUMMY_TEST_ONLY"',account_type='personal',channels=['123456789012345678'],message='Example',image='',minutes=2)
         with patch.dict(bot.os.environ,{},clear=True): result=bot.adapt_config(c)
@@ -47,6 +53,6 @@ class EngineTests(unittest.TestCase):
             async def __aexit__(self,*args): pass
         class Session:
             def post(self,*args,**kwargs): return Response()
-        with patch.object(engine.asyncio,'sleep',new_callable=AsyncMock) as sleep:
+        with patch.object(engine, '_log'), patch.object(engine.asyncio,'sleep',new_callable=AsyncMock) as sleep:
             asyncio.run(engine._mostrar_escribiendo(Session(),'DUMMY_TEST_ONLY','123','a'*2000,1))
         self.assertEqual([c.args[0] for c in sleep.call_args_list],[8,8,2])
