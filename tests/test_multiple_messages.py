@@ -73,6 +73,20 @@ class MultipleMessageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             core.import_package(path, self.root / 'cache')
 
+    def test_recheck_marks_each_id_and_blocks_invalid_export(self):
+        def resolved(token, account_type, channel_id):
+            if channel_id == '223456789012345678':
+                raise core.APIError(404, {})
+            return dict(id=channel_id, name='ventas', group='Tienda', guild_id='333')
+        with patch.object(core, 'resolve_channel', side_effect=resolved):
+            checked = core.recheck_channels('DUMMY_TEST_ONLY', 'personal',
+                                            ['123456789012345678', '223456789012345678'])
+        self.assertEqual(checked[0]['validation'], 'valid')
+        self.assertEqual(checked[1]['validation'], 'invalid')
+        invalid = dict(self.config, channel_metadata=[checked[1]])
+        with self.assertRaisesRegex(ValueError, 'ID no válido'):
+            core.validate(invalid)
+
     def test_engine_routes_each_content_and_image(self):
         (self.root / 'config.json').write_text(json.dumps(self.config), encoding='utf-8')
         class Session:
