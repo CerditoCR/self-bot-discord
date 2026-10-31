@@ -157,9 +157,12 @@ EN.update({
     'Estado': 'Status',
     '✓ Válido': '✓ Valid',
     '✕ No válido': '✕ Invalid',
+    '⚠ Sin confirmar': '⚠ Unconfirmed',
     '• Sin comprobar': '• Not checked',
     'Revisión terminada: {valid} ID(s) válido(s) y {invalid} no válido(s). Corrige o quita los marcados antes de generar el ZIP.': 'Review complete: {valid} valid ID(s) and {invalid} invalid ID(s). Correct or remove the marked IDs before creating the ZIP.',
     'Revisión terminada: {valid} ID(s) válido(s). Ya puedes generar o actualizar el ZIP.': 'Review complete: {valid} valid ID(s). You can now create or update the ZIP.',
+    'Revisión terminada: {valid} ID(s) válido(s), {invalid} no válido(s) y {unconfirmed} sin confirmar. Corrige o quita sólo los no válidos antes de generar el ZIP.': 'Review complete: {valid} valid ID(s), {invalid} invalid ID(s), and {unconfirmed} unconfirmed. Correct or remove only the invalid IDs before creating the ZIP.',
+    'Revisión terminada: {valid} ID(s) válido(s) y {unconfirmed} sin confirmar. Puedes generar el ZIP; vuelve a comprobar los pendientes más tarde.': 'Review complete: {valid} valid ID(s) and {unconfirmed} unconfirmed. You can create the ZIP; recheck pending IDs later.',
     'Hay ID no válido marcado por la revisión. Corrígelo o quítalo antes de generar el ZIP.': 'An ID was marked invalid by the review. Correct or remove it before creating the ZIP.',
 })
 

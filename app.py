@@ -474,7 +474,8 @@ class App(tk.Tk):
         selected = self.channel_table.selection()
         self.channel_table.delete(*self.channel_table.get_children())
         for row in self.channel_rows:
-            state = {'valid': '✓ Válido', 'invalid': '✕ No válido'}.get(row.get('validation'), '• Sin comprobar')
+            state = {'valid': '✓ Válido', 'invalid': '✕ No válido',
+                     'unconfirmed': '⚠ Sin confirmar'}.get(row.get('validation'), '• Sin comprobar')
             self.channel_table.insert('', 'end', iid=row['id'], values=(self.tr(state), row.get('name', 'Sin comprobar'), row.get('group', '—'), row['id']))
         if selected and self.channel_table.exists(selected[0]):
             self.channel_table.selection_set(selected[0])
@@ -600,17 +601,29 @@ class App(tk.Tk):
             checked = {str(row['id']): row for row in results}
             valid_count = 0
             invalid_count = 0
+            unconfirmed_count = 0
             for post in self.posts:
+                previous = {str(row.get('id')): row for row in post.get('channel_metadata', []) if isinstance(row, dict)}
                 refreshed = []
                 for channel in post.get('channels', []):
                     row = dict(checked[str(channel)])
+                    if row.get('validation') == 'unconfirmed':
+                        # A temporary access or network failure does not make an
+                        # existing ID invalid. Keep the last known name and group.
+                        saved = previous.get(str(channel), {})
+                        row['name'] = saved.get('name') or row['name']
+                        row['group'] = saved.get('group') or row['group']
+                        row['guild_id'] = saved.get('guild_id') or row['guild_id']
                     refreshed.append(row)
                     valid_count += row.get('validation') == 'valid'
                     invalid_count += row.get('validation') == 'invalid'
+                    unconfirmed_count += row.get('validation') == 'unconfirmed'
                 post['channel_metadata'] = refreshed
             self.load_editor(self.active_post)
             if invalid_count:
-                return f'Revisión terminada: {valid_count} ID(s) válido(s) y {invalid_count} no válido(s). Corrige o quita los marcados antes de generar el ZIP.'
+                return f'Revisión terminada: {valid_count} ID(s) válido(s), {invalid_count} no válido(s) y {unconfirmed_count} sin confirmar. Corrige o quita sólo los no válidos antes de generar el ZIP.'
+            if unconfirmed_count:
+                return f'Revisión terminada: {valid_count} ID(s) válido(s) y {unconfirmed_count} sin confirmar. Puedes generar el ZIP; vuelve a comprobar los pendientes más tarde.'
             return f'Revisión terminada: {valid_count} ID(s) válido(s). Ya puedes generar o actualizar el ZIP.'
 
         self.worker(lambda: recheck_channels(token, 'personal', all_ids), applied)

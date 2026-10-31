@@ -77,12 +77,15 @@ class MultipleMessageTests(unittest.TestCase):
         def resolved(token, account_type, channel_id):
             if channel_id == '223456789012345678':
                 raise core.APIError(404, {})
+            if channel_id == '323456789012345678':
+                raise core.APIError(403, {})
             return dict(id=channel_id, name='ventas', group='Tienda', guild_id='333')
         with patch.object(core, 'resolve_channel', side_effect=resolved):
             checked = core.recheck_channels('DUMMY_TEST_ONLY', 'personal',
-                                            ['123456789012345678', '223456789012345678'])
+                                            ['123456789012345678', '223456789012345678', '323456789012345678'])
         self.assertEqual(checked[0]['validation'], 'valid')
         self.assertEqual(checked[1]['validation'], 'invalid')
+        self.assertEqual(checked[2]['validation'], 'unconfirmed')
         invalid = dict(self.config, channel_metadata=[checked[1]])
         with self.assertRaisesRegex(ValueError, 'ID no válido'):
             core.validate(invalid)

@@ -145,16 +145,28 @@ def resolve_channel(token, account_type, channel_id):
 def recheck_channels(token, account_type, channel_ids):
     """Resolve every configured channel without stopping at the first failure.
 
-    The GUI can then mark each ID as valid or invalid before exporting a package.
+    Only an ID that Discord confirms does not exist is marked invalid. Permission,
+    rate-limit, connectivity, and unsupported-channel responses remain unconfirmed:
+    those do not prove that an ID is wrong and must not block an export.
     """
     results = []
     for channel_id in dict.fromkeys(str(item).strip() for item in channel_ids):
         try:
             row = resolve_channel(token, account_type, channel_id)
             row.update(validation='valid', validation_detail='')
-        except (APIError, ValueError, OSError) as exc:
+        except APIError as exc:
+            state = 'invalid' if exc.status == 404 else 'unconfirmed'
             row = dict(id=channel_id, name='No válido', group='—', guild_id='',
-                       validation='invalid', validation_detail=str(exc))
+                       validation=state, validation_detail=str(exc))
+        except ValueError as exc:
+            # A malformed value is invalid; a Discord channel type the panel does
+            # not handle is still a real channel and should be reviewed manually.
+            state = 'invalid' if 'solo números' in str(exc) else 'unconfirmed'
+            row = dict(id=channel_id, name='No válido', group='—', guild_id='',
+                       validation=state, validation_detail=str(exc))
+        except (OSError, RuntimeError) as exc:
+            row = dict(id=channel_id, name='Sin confirmar', group='—', guild_id='',
+                       validation='unconfirmed', validation_detail=str(exc))
         results.append(row)
     return results
 
