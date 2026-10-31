@@ -51,6 +51,10 @@ def validate(config, require_content=True):
     if not channels or any(not re.fullmatch(r'\d{15,22}', x) for x in channels):
         raise ValueError('Agrega al menos un canal con un ID válido.')
     c['channels'] = channels
+    invalid = [str(row.get('id', '')) for row in c.get('channel_metadata', [])
+               if isinstance(row, dict) and row.get('validation') == 'invalid']
+    if invalid:
+        raise ValueError('Hay ID no válido marcado por la revisión. Corrígelo o quítalo antes de generar el ZIP.')
     try:
         minutes = float(c.get('minutes', 0))
     except (ValueError, TypeError):
@@ -136,6 +140,23 @@ def resolve_channel(token, account_type, channel_id):
     if not name:
         name = ', '.join(str(u.get('global_name') or u.get('username') or 'Usuario') for u in channel.get('recipients', []))
     return {'id': channel_id, 'name': name or channel_id, 'group': group, 'guild_id': guild_id}
+
+
+def recheck_channels(token, account_type, channel_ids):
+    """Resolve every configured channel without stopping at the first failure.
+
+    The GUI can then mark each ID as valid or invalid before exporting a package.
+    """
+    results = []
+    for channel_id in dict.fromkeys(str(item).strip() for item in channel_ids):
+        try:
+            row = resolve_channel(token, account_type, channel_id)
+            row.update(validation='valid', validation_detail='')
+        except (APIError, ValueError, OSError) as exc:
+            row = dict(id=channel_id, name='No válido', group='—', guild_id='',
+                       validation='invalid', validation_detail=str(exc))
+        results.append(row)
+    return results
 
 
 def request(token, account_type, path, message=None, image='', method=None):

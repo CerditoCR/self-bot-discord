@@ -153,6 +153,14 @@ EN.update({
     'La lista de mensajes no es válida.': 'The message list is invalid.',
     'Un canal no puede pertenecer a dos mensajes distintos.': 'A channel cannot belong to two different messages.',
     'la imagen no se pudo abrir. Selecciona otra imagen.': 'Could not open the image. Select another image.',
+    'Recomprobar todos los IDs': 'Recheck all IDs',
+    'Estado': 'Status',
+    '✓ Válido': '✓ Valid',
+    '✕ No válido': '✕ Invalid',
+    '• Sin comprobar': '• Not checked',
+    'Revisión terminada: {valid} ID(s) válido(s) y {invalid} no válido(s). Corrige o quita los marcados antes de generar el ZIP.': 'Review complete: {valid} valid ID(s) and {invalid} invalid ID(s). Correct or remove the marked IDs before creating the ZIP.',
+    'Revisión terminada: {valid} ID(s) válido(s). Ya puedes generar o actualizar el ZIP.': 'Review complete: {valid} valid ID(s). You can now create or update the ZIP.',
+    'Hay ID no válido marcado por la revisión. Corrígelo o quítalo antes de generar el ZIP.': 'An ID was marked invalid by the review. Correct or remove it before creating the ZIP.',
 })
 
 # Match whole templates so user messages, paths and channel names stay untouched.

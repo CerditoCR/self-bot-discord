@@ -13,7 +13,7 @@ import warnings
 from tkinter import filedialog, messagebox, ttk
 from PIL import Image, ImageOps, ImageTk
 from i18n import translate
-from core import import_package, update_package, normalize_token, valid_token, export_local_desktop, export_zip, load_config, request, resolve_channel, save_config, validate, package_name
+from core import import_package, update_package, normalize_token, valid_token, export_local_desktop, export_zip, load_config, request, recheck_channels, resolve_channel, save_config, validate, package_name
 
 BASE = Path(getattr(sys, '_MEIPASS', Path(__file__).resolve().parent))
 DATA = Path(os.environ.get('APPDATA', Path.home())) / 'Bot Mensaje' / 'config.json'
@@ -144,8 +144,8 @@ class App(tk.Tk):
         self.add_channel_button.pack(side='left')
         table_row = ttk.Frame(outer)
         table_row.pack(fill='x')
-        self.channel_table = ttk.Treeview(table_row, columns=('name', 'group', 'id'), show='headings', height=3, selectmode='browse')
-        for column, label, width in [('name', 'Canal', 170), ('group', 'Servidor / grupo', 220), ('id', 'ID', 180)]:
+        self.channel_table = ttk.Treeview(table_row, columns=('state', 'name', 'group', 'id'), show='headings', height=3, selectmode='browse')
+        for column, label, width in [('state', 'Estado', 95), ('name', 'Canal', 145), ('group', 'Servidor / grupo', 175), ('id', 'ID', 165)]:
             self.channel_table.heading(column, text=label)
             self.channel_table.column(column, width=width, minwidth=80, stretch=True)
         table_scroll = ttk.Scrollbar(table_row, command=self.channel_table.yview)
@@ -156,6 +156,8 @@ class App(tk.Tk):
         channel_actions.pack(fill='x', pady=(5, 0))
         self.delete_channel_button = ttk.Button(channel_actions, text='Quitar seleccionado', command=self.remove_channel)
         self.delete_channel_button.pack(side='left')
+        self.recheck_channels_button = ttk.Button(channel_actions, text='Recomprobar todos los IDs', command=self.recheck_all_channels)
+        self.recheck_channels_button.pack(side='right')
 
         outer = self.section(shell, '04', 'Tu mensaje')
         self.message = self.textbox(outer, height=4)
@@ -211,7 +213,7 @@ class App(tk.Tk):
         self.status_label = ttk.Label(outer, textvariable=self.status, style='StatusInfo.TLabel', wraplength=740)
         self.status_label.pack(anchor='w', pady=(8, 0))
         self.controls = [self.secret, self.reveal, self.channel_entry,
-                         self.add_channel_button, self.delete_channel_button, self.message,
+                         self.add_channel_button, self.delete_channel_button, self.recheck_channels_button, self.message,
                          self.interval, self.check_button, self.choose_button, self.remove_button,
                          self.zip_button, self.local_button, self.load_button, self.update_button, self.add_post_button, self.remove_post_button, self.post_selector]
         self.restore()
@@ -342,7 +344,7 @@ class App(tk.Tk):
             widget.configure(text=self.tr(source))
         self.theme_selector.configure(values=[self.tr('Claro'), self.tr('Oscuro')])
         self.theme_display.set(self.tr(self.theme.get()))
-        for column, source in [('name', 'Canal'), ('group', 'Servidor / grupo'), ('id', 'ID')]:
+        for column, source in [('state', 'Estado'), ('name', 'Canal'), ('group', 'Servidor / grupo'), ('id', 'ID')]:
             self.channel_table.heading(column, text=self.tr(source))
         self.status.set(self.tr(self.status_source))
         self.account_status.set(self.tr(self.account_source))
@@ -472,7 +474,8 @@ class App(tk.Tk):
         selected = self.channel_table.selection()
         self.channel_table.delete(*self.channel_table.get_children())
         for row in self.channel_rows:
-            self.channel_table.insert('', 'end', iid=row['id'], values=(row.get('name', 'Sin comprobar'), row.get('group', '—'), row['id']))
+            state = {'valid': '✓ Válido', 'invalid': '✕ No válido'}.get(row.get('validation'), '• Sin comprobar')
+            self.channel_table.insert('', 'end', iid=row['id'], values=(self.tr(state), row.get('name', 'Sin comprobar'), row.get('group', '—'), row['id']))
         if selected and self.channel_table.exists(selected[0]):
             self.channel_table.selection_set(selected[0])
 
@@ -565,6 +568,7 @@ class App(tk.Tk):
             return
         token, kind = self.token.get(), 'personal'
         def added(row):
+            row.update(validation='valid', validation_detail='')
             self.channel_rows.append(row)
             self.render_channels()
             self.channel_table.selection_set(row['id'])
@@ -573,6 +577,43 @@ class App(tk.Tk):
             self.refresh_form()
             return f'Agregado: {row["name"]} · {row["group"]}. Puedes guardar los cambios al cerrar.'
         self.worker(lambda: resolve_channel(token, kind, channel), added)
+
+    def recheck_all_channels(self):
+        """Check all IDs across all independent messages before package export."""
+        if self.busy:
+            return
+        self.posts[self.active_post] = self.editor_post()
+        token = normalize_token(self.token.get())
+        all_ids = []
+        for post in self.posts:
+            all_ids.extend(str(channel) for channel in post.get('channels', []))
+        if not all_ids:
+            self.error(ValueError('Falta un canal. Agrega un ID en Canales de destino.'))
+            return
+        if not valid_token(token):
+            self.error(ValueError('Introduce primero el token de la cuenta.'))
+            return
+
+        def applied(results):
+            if normalize_token(self.token.get()) != token:
+                raise ValueError('Token cambiado. Vuelve a comprobar la cuenta.')
+            checked = {str(row['id']): row for row in results}
+            valid_count = 0
+            invalid_count = 0
+            for post in self.posts:
+                refreshed = []
+                for channel in post.get('channels', []):
+                    row = dict(checked[str(channel)])
+                    refreshed.append(row)
+                    valid_count += row.get('validation') == 'valid'
+                    invalid_count += row.get('validation') == 'invalid'
+                post['channel_metadata'] = refreshed
+            self.load_editor(self.active_post)
+            if invalid_count:
+                return f'Revisión terminada: {valid_count} ID(s) válido(s) y {invalid_count} no válido(s). Corrige o quita los marcados antes de generar el ZIP.'
+            return f'Revisión terminada: {valid_count} ID(s) válido(s). Ya puedes generar o actualizar el ZIP.'
+
+        self.worker(lambda: recheck_channels(token, 'personal', all_ids), applied)
 
     def remove_channel(self):
         if self.busy:
