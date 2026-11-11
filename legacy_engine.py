@@ -398,11 +398,8 @@ def _resolver_variables(texto: str, num_envio: int) -> str:
 # ─── Silencio por horario ─────────────────────────────────────────────────────
 
 def _en_silencio(ahora: datetime, desde: str, hasta: str) -> bool:
-    try:
-        h1, m1 = map(int, desde.split(":"))
-        h2, m2 = map(int, hasta.split(":"))
-    except Exception:
-        return False
+    h1, m1 = _parse_hhmm(desde, 'silencio_desde')
+    h2, m2 = _parse_hhmm(hasta, 'silencio_hasta')
     minutos_ahora = ahora.hour * 60 + ahora.minute
     minutos_desde = h1 * 60 + m1
     minutos_hasta = h2 * 60 + m2
@@ -414,10 +411,12 @@ def _en_silencio(ahora: datetime, desde: str, hasta: str) -> bool:
 # ─── Próximo envío (schedule) ─────────────────────────────────────────────────
 
 def _segundos_hasta(hora_str: str, dias_activos: list) -> int:
-    try:
-        h, m = map(int, hora_str.split(":"))
-    except Exception:
-        return 3600
+    h, m = _parse_hhmm(hora_str, 'hora')
+    if not isinstance(dias_activos, list) or not dias_activos:
+        raise ValueError('La lista de días activos debe contener al menos un día.')
+    if any(isinstance(day, bool) or not isinstance(day, int) or not 0 <= day <= 7
+           for day in dias_activos):
+        raise ValueError('Los días activos deben ser números entre 0 y 7.')
     python_dias = {(d + 6) % 7 for d in dias_activos}
     ahora  = datetime.now()
     target = ahora.replace(hour=h, minute=m, second=0, microsecond=0)
@@ -426,6 +425,65 @@ def _segundos_hasta(hora_str: str, dias_activos: list) -> int:
         if dia.weekday() in python_dias and dia > ahora:
             return int((dia - ahora).total_seconds())
     return 86400
+
+
+def _parse_hhmm(value: str, field: str) -> tuple[int, int]:
+    """Parse a 24-hour HH:MM value and fail with a useful config error."""
+    if not isinstance(value, str):
+        raise ValueError(f'El campo {field} debe usar el formato HH:MM (por ejemplo, 09:30).')
+    try:
+        hour_text, minute_text = value.split(':')
+        hour, minute = int(hour_text), int(minute_text)
+    except (ValueError, TypeError):
+        raise ValueError(f'El campo {field} debe usar el formato HH:MM (por ejemplo, 09:30).') from None
+    if (not 1 <= len(hour_text) <= 2 or not 1 <= len(minute_text) <= 2 or
+            not hour_text.isascii() or not minute_text.isascii() or
+            not hour_text.isdigit() or not minute_text.isdigit() or
+            not 0 <= hour <= 23 or not 0 <= minute <= 59):
+        raise ValueError(f'El campo {field} debe ser una hora válida entre 00:00 y 23:59.')
+    return hour, minute
+
+
+def _validate_runtime_config(config: dict) -> None:
+    """Reject malformed runtime settings before any network request is made."""
+    if not isinstance(config, dict):
+        raise StopDelivery('La configuración debe ser un objeto JSON.')
+    if not isinstance(config.get('token'), str) or not config['token'].strip():
+        raise StopDelivery('Falta una credencial de cuenta válida en config.json.')
+    channels = config.get('channels')
+    if (not isinstance(channels, list) or not channels or
+            any(not isinstance(channel, str) or not channel.isascii() or not channel.isdigit() or not 15 <= len(channel) <= 22
+                for channel in channels)):
+        raise StopDelivery('La lista "channels" debe contener IDs de canal de 15 a 22 dígitos, escritos como texto.')
+    try:
+        interval = int(config.get('intervalo', 3600))
+    except (ValueError, TypeError, OverflowError):
+        raise StopDelivery('El intervalo debe ser un número entero de segundos.') from None
+    if interval <= 0:
+        raise StopDelivery('El intervalo debe ser mayor que cero segundos.')
+    schedule_type = config.get('schedule_type', 'interval')
+    if schedule_type not in ('interval', 'schedule'):
+        raise StopDelivery('El tipo de programación debe ser "interval" o "schedule".')
+    if schedule_type == 'schedule':
+        try:
+            _parse_hhmm(config.get('hora', '09:00'), 'hora')
+            days = config.get('dias', list(range(7)))
+            if not isinstance(days, list) or not days:
+                raise ValueError('La lista de días activos debe contener al menos un día.')
+            if any(isinstance(day, bool) or not isinstance(day, int) or not 0 <= day <= 7 for day in days):
+                raise ValueError('Los días activos deben ser números entre 0 y 7.')
+        except ValueError as exc:
+            raise StopDelivery(f'Configuración de programación no válida: {exc}') from None
+    silence_start = config.get('silencio_desde', '')
+    silence_end = config.get('silencio_hasta', '')
+    if bool(silence_start) != bool(silence_end):
+        raise StopDelivery('Para activar el silencio, configura tanto silencio_desde como silencio_hasta.')
+    if silence_start:
+        try:
+            _parse_hhmm(silence_start, 'silencio_desde')
+            _parse_hhmm(silence_end, 'silencio_hasta')
+        except ValueError as exc:
+            raise StopDelivery(f'Configuración de silencio no válida: {exc}') from None
 
 
 # ─── Mapa channel → guild (al inicio) ────────────────────────────────────────
@@ -513,16 +571,21 @@ def _cargar_ultimo_msg() -> dict:
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
             data = json.load(f)
-        if isinstance(data, dict):
-            return {str(k): str(v) for k, v in data.items()}
+        if not isinstance(data, dict) or any(
+                not str(channel).isdigit() or not str(message).isdigit()
+                for channel, message in data.items()):
+            raise ValueError('El archivo no contiene IDs válidos de canales y mensajes.')
+        return {str(channel): str(message) for channel, message in data.items()}
     except FileNotFoundError:
-        pass
-    except Exception as exc:
-        _log("WARN", f"[ESTADO] No se pudo leer {STATE_PATH}: {_error_description(exc)}")
-    return {}
+        return {}
+    except (OSError, ValueError, TypeError, UnicodeError) as exc:
+        raise StopDelivery(
+            f'No se pudo recuperar el historial de mensajes ({STATE_PATH}). '
+            'Se detienen los envíos para evitar duplicados; revisa o restaura ese archivo antes de reiniciar.'
+        ) from exc
 
 
-def _guardar_ultimo_msg(data: dict) -> None:
+def _guardar_ultimo_msg(data: dict) -> bool:
     tmp_path = STATE_PATH + ".tmp"
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
@@ -725,6 +788,7 @@ async def main():
     _log("INFO", f"Cargando configuración desde: {config_path}")
     with open(config_path, encoding="utf-8") as f:
         config = configuration_adapter(json.load(f))
+    _validate_runtime_config(config)
 
     global _channel_details, _log_secrets
     _channel_details = {str(channel): dict(entry) for channel, entry in config.get('channel_content', {}).items()}
@@ -951,9 +1015,10 @@ async def main():
                         continue
 
                     resultado = await _enviar_a_canal(ch_id_str, contenido, rutas_envio, num_envio)
-                    stats[resultado] += 1
                     if resultado == "rl":
                         en_espera.append(ch_id_str)
+                    else:
+                        stats[resultado] += 1
                     pausa_canal = random.uniform(12, 20)
                     _log("INFO", f"[ESPERA] Esperando {pausa_canal:.1f}s antes del próximo canal...")
                     await asyncio.sleep(pausa_canal)

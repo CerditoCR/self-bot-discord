@@ -88,7 +88,9 @@ La versión renombrada utiliza su propia carpeta de configuración `Bot Mensaje`
 
 | Archivo o carpeta | Responsabilidad |
 | --- | --- |
-| `app.py` | Ventana Tkinter, temas, formularios, vistas previas, validación visual y tareas en segundo plano. |
+| `app.py` | Punto de entrada compatible del panel; ejecutar con `python app.py`. |
+| `ui/window.py` | Ventana Tkinter, temas, formularios, vistas previas, validación visual y tareas en segundo plano. |
+| `ui/__init__.py` | Paquete de la interfaz de escritorio. |
 | `core.py` | Validación, consultas HTTP del panel, protección de credenciales y creación/importación/actualización de paquetes. |
 | `bot.py` | Arranque de la ejecución y adaptación de la configuración del panel al motor. |
 | `legacy_engine.py` | Publicación, consultas previas, indicador de escritura, borrado anterior, esperas, reintentos, estado y registros. |
@@ -96,7 +98,8 @@ La versión renombrada utiliza su propia carpeta de configuración `Bot Mensaje`
 | `local-runner.exe` | Motor compilado incluido en los paquetes locales; se recompila al cambiar su código. |
 | `scripts/build.py` | Compila el motor y el panel con PyInstaller. |
 | `tests/` | Pruebas con credenciales sintéticas y respuestas simuladas. |
-| `config.example.json` | Ejemplo para consultar la estructura de configuración. |
+| `examples/config.example.json` | Ejemplo para consultar la estructura de configuración. |
+| `docs/ABRIR EN VS CODE.md` | Guía para preparar VS Code y compilar el proyecto. |
 | `Bot Mensaje.code-workspace` | Espacio de trabajo para abrir esta carpeta en VS Code. |
 
 El motor conserva funciones para configuraciones antiguas, como horarios, silencios y selección de contenido alternativo. La interfaz actual ofrece un flujo más simple de texto, una imagen e intervalo; no expone todas las capacidades internas.
@@ -128,13 +131,13 @@ Para compilar en Windows:
 .\.venv\Scripts\python.exe scripts\build.py
 ```
 
-El panel compilado se genera en `dist\BOT MENSAJE.exe`. La compilación también actualiza `local-runner.exe`. Hay instrucciones adicionales en [ABRIR EN VS CODE.md](<ABRIR EN VS CODE.md>).
+El panel compilado se genera en `dist\BOT MENSAJE.exe`. La compilación también actualiza `local-runner.exe`. Hay instrucciones adicionales en [Guía para VS Code](<docs/ABRIR EN VS CODE.md>).
 
-## 9. Aspectos conocidos que conviene corregir
+## 9. Límites y aspectos conocidos
 
 - **Borrado previo al envío:** si se borra el mensaje anterior y falla el siguiente envío, el canal puede quedarse sin ese aviso.
-- **Estado al actualizar un BAT:** el actualizador busca `ultimo_envio.json`, pero el motor utiliza `ultimo_msg.json`. Esa diferencia puede perder el seguimiento de la publicación anterior al actualizar.
-- **Registros:** algunos textos incluidos en los paquetes dicen que los registros no se guardan, pero el motor sí escribe `bot.log`. Es una diferencia pendiente de corregir.
+- **Actualización de un BAT:** si ocurre un error durante la actualización, los archivos temporales de esa operación se limpian cuando se puede; si Windows mantiene alguno bloqueado, puede quedar una carpeta temporal en el Escritorio.
+- **Importación de paquetes:** la importación limita las imágenes a 10 MB cada una y a 50 MB en total para evitar cargar paquetes enormes en memoria.
 - **Respuestas inciertas:** un envío que llegue al servidor pero cuya confirmación se pierda puede producir duplicados al reintentarse.
 - **Tipo de cuenta:** la interfaz fuerza una cuenta personal. Aunque partes de `core.py` contemplan otro tipo de autenticación, eso no equivale a una integración completa y comprobada con un bot oficial.
 
@@ -159,6 +162,8 @@ El ZIP para Discloud y el BAT local incluyen todos los mensajes y sus imágenes.
 El motor imprime sus registros en español con fecha y hora de Costa Rica (UTC−6), y salida inmediata (`print(..., flush=True)`). Cada envío indica el número de mensaje, nombre e ID del canal, servidor o grupo disponible, texto, imagen, intento, resultado e ID de la publicación. Se registran el borrado anterior, las pausas, los límites temporales de Discord, los reintentos, los errores con explicación y código técnico y el resumen y próxima ronda. Si no se puede consultar el nombre de un canal, se conserva el nombre del paquete y su ID.
 
 Las credenciales se ocultan en los registros. Las explicaciones generadas por el bot están en español; los nombres de canales, archivos y el contenido del usuario se conservan. El idioma del panel no cambia el idioma de estos registros. Para aplicarlos a un despliegue existente, genera o actualiza el ZIP con la nueva versión del panel y vuelve a subirlo a Discloud.
+
+Al iniciar, el registro indica si la credencial efectiva proviene de `DISCORD_TOKEN` o de `config.json`. Si ambas existen y son distintas, advierte que la variable de entorno tiene prioridad. Nunca muestra el contenido de las credenciales.
 
 ## Entregas seguras y recuperación de errores
 

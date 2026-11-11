@@ -31,7 +31,20 @@ def adapt_config(config):
 def run():
     base = Path(sys.executable if getattr(sys, 'frozen', False) else __file__).resolve().parent
     config = json.loads((base/'config.json').read_text(encoding='utf-8-sig'))
-    engine._log_secrets = [normalize_token(config.get('token', '')), os.environ.get('DISCORD_TOKEN', '')]
+    package_token = normalize_token(config.get('token', ''))
+    env_token = normalize_token(os.environ.get('DISCORD_TOKEN', ''))
+    # Discloud environment variables take precedence over the token in config.json.
+    # Explain this choice without ever printing either credential.
+    if env_token:
+        config['token'] = env_token
+        if package_token and package_token != env_token:
+            engine._log('WARN', '[CONFIGURACIÓN] DISCORD_TOKEN está definida y es distinta a la credencial del ZIP; se usará la variable de Discloud. Revisa la variable si no era intencional.')
+        else:
+            engine._log('INFO', '[CONFIGURACIÓN] La credencial se obtiene de DISCORD_TOKEN (variable de entorno de Discloud).')
+    else:
+        config['token'] = package_token
+        engine._log('INFO', '[CONFIGURACIÓN] La credencial se obtiene de config.json del paquete; DISCORD_TOKEN no está definida.')
+    engine._log_secrets = [package_token, env_token]
     stop = ('Para detener en Discloud, usa Detener en el panel de Discloud.'
             if config.get('runtime_target') == 'discloud' else
             'Para detener: pulsa Ctrl+C o cierra esta ventana.')

@@ -16,6 +16,15 @@ import zipfile
 
 API = 'https://discord.com/api/v10'
 MAX_IMAGE = 10 * 1024 * 1024
+MAX_PACKAGE_IMAGE_TOTAL = 50 * 1024 * 1024
+
+
+def _check_package_image_size(total, size):
+    if size > MAX_IMAGE:
+        raise ValueError('Esta versión admite imágenes de hasta 10 MB.')
+    if total + size > MAX_PACKAGE_IMAGE_TOTAL:
+        raise ValueError('Las imágenes del paquete superan el límite total de 50 MB.')
+    return total + size
 
 
 def normalize_token(value):
@@ -47,8 +56,13 @@ def validate(config, require_content=True):
         raise ValueError('Introduce un token válido, sin espacios ni comillas sueltas.')
     if c.get('account_type') not in ('personal', 'bot'):
         raise ValueError('Elige el tipo de cuenta.')
-    channels = list(dict.fromkeys(c.get('channels', [])))
-    if not channels or any(not re.fullmatch(r'\d{15,22}', x) for x in channels):
+    raw_channels = c.get('channels', [])
+    if not isinstance(raw_channels, (list, tuple)):
+        raise ValueError('La lista de canales no es válida.')
+    if any(not isinstance(channel, str) for channel in raw_channels):
+        raise ValueError('Agrega los IDs de canal como texto, usando solo números.')
+    channels = list(dict.fromkeys(raw_channels))
+    if not channels or any(not re.fullmatch(r'[0-9]{15,22}', x) for x in channels):
         raise ValueError('Agrega al menos un canal con un ID válido.')
     c['channels'] = channels
     invalid = [str(row.get('id', '')) for row in c.get('channel_metadata', [])
@@ -97,6 +111,10 @@ def validate(config, require_content=True):
                           for key in ('channels', 'channel_metadata', 'message', 'image')})
     if extras or 'extra_messages' in c:
         c['extra_messages'] = validated
+    image_paths = [image for image in [c.get('image', ''), *(item.get('image', '') for item in validated)] if image]
+    total_image_size = sum(Path(image).stat().st_size for image in image_paths)
+    if total_image_size > MAX_PACKAGE_IMAGE_TOTAL:
+        raise ValueError('Las imágenes del paquete superan el límite total de 50 MB.')
     return c
 
 
@@ -315,7 +333,7 @@ def export_local_zip(path, config, base, language='Español'):
         'This package contains your account credential. Do not share it.\n'
         'To change settings, create and extract a new package from the panel.\n'
         'Do not run multiple copies or both Discloud and the local package simultaneously.\n'
-        'Logs appear in CMD; they are not saved to a log file.\n'
+        'Logs appear in CMD and are also saved to bot.log beside the runtime.\n'
         if english else
         'BOT MENSAJE - Paquete local para Windows\n\n'
         '1. Extrae TODO el ZIP en una carpeta. No lo ejecutes dentro del ZIP.\n'
@@ -326,7 +344,7 @@ def export_local_zip(path, config, base, language='Español'):
         'Este paquete contiene la credencial de tu cuenta. No lo compartas.\n'
         'Para cambiar los datos, genera y extrae un paquete nuevo desde el panel.\n'
         'No ejecutes varias copias ni Discloud y el paquete local a la vez.\n'
-        'Los logs aparecen en CMD; no se guardan en un archivo de registro.\n')
+        'Los logs aparecen en CMD y también se guardan en bot.log junto al motor.\n')
     path = Path(path)
     temporary = None
     try:
@@ -491,7 +509,8 @@ def bat_package_directory(path):
 def import_package(path, cache):
     """Lee sólo JSON e imagen; nunca ejecuta ni extrae código del paquete."""
     path = Path(path).resolve()
-    image_data = []
+    package_image_data = []
+    total_image_size = 0
     if path.suffix.lower() == '.zip':
         try:
             with zipfile.ZipFile(path) as z:
@@ -512,9 +531,8 @@ def import_package(path, cache):
                     if names.count(name) != 1:
                         raise ValueError('No se encuentra la imagen dentro del paquete.')
                     info = z.getinfo(name)
-                    if info.file_size > MAX_IMAGE:
-                        raise ValueError('Esta versión admite imágenes de hasta 10 MB.')
-                    image_data.append((entry, z.read(info)))
+                    total_image_size = _check_package_image_size(total_image_size, info.file_size)
+                    package_image_data.append((entry, z.read(info)))
             source = dict(path=str(path), kind=kind)
         except (zipfile.BadZipFile, RuntimeError, KeyError):
             raise ValueError('No se pudo leer el ZIP. Selecciona un paquete válido de este programa.') from None
@@ -532,9 +550,8 @@ def import_package(path, cache):
                 image_path = (folder / str(relative)).resolve()
                 if not image_path.is_relative_to(folder):
                     raise ValueError('El paquete contiene una ruta de archivo no válida.')
-                if image_path.stat().st_size > MAX_IMAGE:
-                    raise ValueError('Esta versión admite imágenes de hasta 10 MB.')
-                image_data.append((entry, image_path.read_bytes()))
+                total_image_size = _check_package_image_size(total_image_size, image_path.stat().st_size)
+                package_image_data.append((entry, image_path.read_bytes()))
             source = dict(path=str(path), kind='bat', folder=str(folder))
         except UnicodeError:
             raise ValueError('Este BAT no tiene una configuración compatible. Selecciona un BAT generado por este programa.') from None
@@ -542,7 +559,7 @@ def import_package(path, cache):
         raise ValueError('Selecciona un archivo BAT o ZIP generado por este programa.')
     created = []
     try:
-        for entry, raw in image_data:
+        for entry, raw in package_image_data:
             suffix = Path(entry['image']).suffix.lower()
             if suffix not in ('.png', '.jpg', '.jpeg', '.gif', '.webp'):
                 raise ValueError('Elige una imagen PNG, JPG, GIF o WEBP.')
@@ -570,9 +587,10 @@ def update_package(source, config, base, language='Español'):
     elif source['kind'] == 'bat':
         # New runtime files avoid modifying an executable that may still be open.
         launcher = Path(export_local_desktop(config, base, language, desktop=path.parent))
-        folder = bat_package_directory(launcher)
+        folder = None
         old_state = Path(source['folder']) / 'ultimo_envio.json'
         try:
+            folder = bat_package_directory(launcher)
             if old_state.is_file() and old_state.stat().st_size <= MAX_CONFIG:
                 state = json.loads(old_state.read_text(encoding='utf-8'))
                 if isinstance(state, dict) and isinstance(state.get('channels'), dict) and str(state.get('account_id', '')).isdigit():
@@ -589,9 +607,32 @@ def update_package(source, config, base, language='Español'):
                     (folder / name).write_bytes(raw)
             os.replace(launcher, path)
         except Exception:
-            launcher.unlink(missing_ok=True)
+            _remove_generated_local_package(launcher, folder, path.parent)
             raise
         return dict(source, folder=str(folder))
     else:
         raise ValueError('Selecciona un archivo BAT o ZIP generado por este programa.')
     return dict(source)
+
+
+def _remove_generated_local_package(launcher, folder, desktop):
+    """Remove only flat files from the package generated by this update attempt."""
+    launcher, desktop = Path(launcher), Path(desktop)
+    try:
+        if launcher.parent.resolve() == desktop.resolve():
+            launcher.unlink(missing_ok=True)
+    except OSError:
+        pass
+    if folder is None:
+        return
+    folder = Path(folder)
+    try:
+        if folder.parent.resolve() != desktop.resolve() or folder.is_symlink():
+            return
+        for item in folder.iterdir():
+            if item.is_file() and not item.is_symlink():
+                item.unlink()
+        folder.rmdir()
+    except OSError:
+        # Leave anything unexpected in place rather than deleting recursively.
+        pass
